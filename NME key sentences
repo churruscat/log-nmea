@@ -1,0 +1,116 @@
+
+        1       2 3        4 5         6 7   8
+        |       | |        | |         | |   |
+ $--GLL,llll.ll,a,yyyyy.yy,a,hhmmss.ss,a,m,*hh<CR><LF>
+Field Number:
+
+Latitude
+1 N or S (North or South)
+2 Longitude
+3 E or W (East or West)
+4 Universal Time Coordinated (UTC)
+5 Status A - Data Valid, V - Data Invalid
+6 FAA mode indicator (NMEA 2.3 and later)
+7 Checksum
+
+
+**************************************************************************************
+  Repite cosas de GLL
+Time, Position and fix related data for a GPS receiver.
+
+                                                      11
+        1         2       3 4        5 6 7  8   9  10 |  12 13  14   15
+        |         |       | |        | | |  |   |   | |   | |   |    |
+ $--GGA,hhmmss.ss,llll.ll,a,yyyyy.yy,a,x,xx,x.x,x.x,M,x.x,M,x.x,xxxx*hh<CR><LF>
+Field Number:
+1 Universal Time Coordinated (UTC)
+2 Latitude
+3 N or S (North or South)
+4 Longitude
+5 E or W (East or West)
+6 GPS Quality Indicator,
+	0 - fix not available,
+	1 - GPS fix,
+	2 - Differential GPS fix (values above 2 are 2.3 features)
+	3 = PPS fix
+	4 = Real Time Kinematic
+	5 = Float RTK
+	6 = estimated (dead reckoning)
+	7 = Manual input mode
+	8 = Simulation mode
+7 Number of satellites in view, 00 - 12
+**************************************************************************************
+HDM - Heading - Magnetic
+Vessel heading in degrees with respect to magnetic north produced by any device or system producing magnetic heading.
+
+        1   2 3
+        |   | |
+ $--HDM,x.x,M*hh<CR><LF>
+Field Number:
+1 Heading Degrees, magnetic
+1 M = magnetic
+3 Checksum
+**************************************************************************************
+
+MTW - Mean Temperature of Water
+        1   2 3
+        |   | |
+ $--MTW,x.x,C*hh<CR><LF>
+Field Number:
+1 Degrees
+2 Unit of Measurement, Celcius
+3 Checksum
+**************************************************************************************
+
+RSA - Rudder Sensor Angle
+        1   2 3   4 5
+        |   | |   | |
+ $--RSA,x.x,A,x.x,A*hh<CR><LF>
+Field Number:
+1 Starboard (or single) rudder sensor, "-" means Turn To Port
+2 Status, A means data is valid
+3 Port rudder sensor
+4 Status, A means data is valid
+5 Checksum
+**************************************************************************************
+        1   2 3   4 5
+        |   | |   | |
+ $--MWV,x.x,a,x.x,a*hh<CR><LF>
+Field Number:
+1 Wind Angle, 0 to 360 degrees
+2 Reference, R = Relative, T = True
+3 Wind Speed
+4 Wind Speed Units, K/M/N
+5 Status, A = Data Valid
+6 Checksum
+
+**************************************************************************************
+DBT - Depth below transducer
+        1   2 3   4 5   6 7
+        |   | |   | |   | |
+ $--DBT,x.x,f,x.x,M,x.x,F*hh<CR><LF>
+Field Number:
+
+Depth, feet
+1 f = feet
+2 Depth, meters
+3 M = meters
+4 Depth, Fathoms
+5 F = Fathoms
+6 Checksum
+**************************************************************************************
+VHW - Water speed and heading
+        1   2 3   4 5   6 7   8 9
+        |   | |   | |   | |   | |
+ $--VHW,x.x,T,x.x,M,x.x,N,x.x,K*hh<CR><LF>
+Field Number:
+1 Degress True
+2 T = True
+3 Degrees Magnetic
+4 M = Magnetic
+5 Knots (speed of vessel relative to the water)
+6 N = Knots
+7 Kilometers (speed of vessel relative to the water)
+8 K = Kilometers
+9 Checksum
+**************************************************************************************
