@@ -40,6 +40,7 @@ configData={
     "portudp":"4000",
     "loglevel":"info",
     "fileraw":""
+    "num_iter":50
     }
 
 def recibeudp(sentence,estado):
@@ -163,7 +164,7 @@ def NMEA_ERRPM(datos,estado):
             estado["RPM"]=datos[2]
         else:
             estado["RPM"]=1
-        estado["ENG"]=1
+        estado["ENG"]=True
     else:
         estado["RPM"]=0  
     logging.info("RPM="+str(estado["RPM"]))   
@@ -191,50 +192,33 @@ def leeParser(configfile,configData):
         if parser.has_option("log_level","log_level"):  
             configData["loglevel"]=parser.get("log_level","log_level")
             print("loglevel=",log_level)
-    print("log_level="+str(log_level))
     logging.basicConfig(stream=sys.stderr, format = '%(asctime)-15s  %(message)s', level=log_level.upper()) 
     if parser.has_section("udp"):
         if parser.has_option("udp","port"):
             configData["portudp"]=int(parser.get("udp","port"))
-        else:
-            configData["portudp"]=4000
     if parser.has_section("settings"):
         if parser.has_option("settings","device_id"):   
-            configData["device_id"]=parser.get("settings","device_id")
-        else:
-            configData["device_id"]='Raymarine'
+            configData["device_id"]=parser.get("settings","device_id")      
         if parser.has_option("settings","location"):    
             configData["location"]=parser.get("settings","location")
-        else:
-            configData["location"]='Nowhere'
         if parser.has_option("settings","influxdb"):    
             configData["influxdb"]=parser.get("settings","influxdb")
-        else:
-            configData["influxdb"]='127.0.0.1'
         if parser.has_option("settings","destination_host"):    
             configData["destination_host"]=parser.get("settings","destination_host")          
         if parser.has_option("settings","user_name"):   
             configData["username"]=parser.get("settings","user_name")
-        else:
-            configData["username"]=''
         if parser.has_option("settings","password"):    
             configData["password"]=parser.get("settings","password")
-        else:
-            configData["password"]=''        
         if parser.has_option("settings","publish_topic"):   
             configData["publish_topic"]=parser.get("settings","publish_topic")
-        else:
-            configData["publish_topic"]='datosVela'
         if parser.has_option("settings","log_topic"):   
             configData["log_topic"]=parser.get("settings","log_topic")                
-        else:
-            configData["log_topic"]='NMEA'
         if parser.has_option("settings","port"):   
             configData["port"]=int(parser.get("settings","port"))
-        else:
-            configData["port"]=1883
-    #filename="/var/log/recibeudp"
-    filename="recibeudp"
+        if parser.has_option("settings","num_records"):   
+            configData["num_records"]=int(parser.get("settings","num_records"))            
+
+    filename=""
     if parser.has_section("rawfile"):
         if parser.has_option("raw_file","filename"):    
             configData["fileraw"]=parser.get("raw_file","filename")
@@ -247,7 +231,6 @@ if __name__ == '__main__':
     tags["deviceId"]=configData["device_id"]
     tags["location"]=configData["location"]
     logging.info(configData)
-
    
     # Create  socket AF_INET:ipv4, SOCK_DGAM:udp
     clienteSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -259,13 +242,13 @@ if __name__ == '__main__':
     estado={}
     estado["RPM"]=0
     if configData["fileraw"]=='':
-        estado["FILE"]=0
+        estado["FILE"]=False
     else:
-        estado["FILE"]=1
+        estado["FILE"]=True
         ahora = datetime.now()
         configData["fileraw"]=configData["fileraw"]+'-'+str(ahora.strftime("%Y%m%d"))+".log"
         fileRaw=open(configData["fileraw"],"a")         
-    estado["ENG"]=0
+    estado["ENG"]=False
     estado["epoch"]=0
     estado["hora"]=0
     estado["AWA"]=""
@@ -298,13 +281,12 @@ if __name__ == '__main__':
             sentence, origen = clienteSock.recvfrom(1024)
             sentence=sentence.decode("utf-8")
             logging.debug(sentence.strip('\r\n'))
-            if (estado["ENG"]==0 and estado["FILE"]==1):
-                fileRaw.write(sentence)
+            if (!estado["ENG"] and estado["FILE"]):   #engine stopped and there is logfile                fileRaw.write(sentence)
                 result, mid = mqttc.publish(configData["log_topic"], sentence, 1, True )
             else:
                 pass            
             recibeudp(sentence,estado)
-            if i>100:
+            if i>configData["num_records"]:
                 #dato='{"measurement":"'+"NMEA"+'","time":'+estado["epoch"]+\
                 #',"fields":'+json.dumps(payload[0])+',"tags":'+tags+'}'
                 cadena='"RPM"'+':'+str(estado["RPM"])+','
@@ -335,7 +317,7 @@ if __name__ == '__main__':
                 except:
                     logging.warning("could not JSONize ",'{"measurement":"'+measurement+'","time":'+str(estado["hora"])+',"fields":'+cadena+',"tags":'+tags+'}')
                 i=0
-                estado["ENG"]=0
+                estado["ENG"]=False
             i+=1
         except KeyboardInterrupt:
             break
