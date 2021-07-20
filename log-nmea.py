@@ -304,7 +304,7 @@ if __name__ == '__main__':
             else:
                 pass            
             recibeudp(sentence,estado)
-            if i>100:
+            if i>50:
                 #dato='{"measurement":"'+"NMEA"+'","time":'+estado["epoch"]+\
                 #',"fields":'+json.dumps(payload[0])+',"tags":'+tags+'}'
                 cadena='"RPM"'+':'+str(estado["RPM"])+','
