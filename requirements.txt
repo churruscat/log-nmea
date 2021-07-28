@@ -1,6 +1,3 @@
-
 paho-mqtt
-influxdb 
-influxdb_client
 datetime
 configparser

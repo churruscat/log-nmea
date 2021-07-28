@@ -23,7 +23,7 @@ from datetime import datetime
 from time import time
 #import pynmea2
 
-configFile='/etc/recibeudp/recibeudp.conf'
+configFile='/etc/log-nmea/log-nmea.conf'
 tipoLogging=['none','debug', 'info', 'warning', 'error' ,'critical']
 tags={"deviceId":"Raymarine","location":"Barco"}
 measurement='NMEA'
@@ -39,8 +39,8 @@ configData={
     "port":"1883",
     "portudp":"4000",
     "loglevel":"info",
-    "fileraw":""
-    "num_iter":50
+    "fileraw":"",
+    "num_records":50
     }
 
 def recibeudp(sentence,estado):
@@ -169,7 +169,7 @@ def NMEA_ERRPM(datos,estado):
         estado["RPM"]=0  
     logging.info("RPM="+str(estado["RPM"]))   
 
-def escribe(linea)
+def escribe(linea):
     if len(clientes["sender"]["broker"])>2:
         try:   
             result, mid = clientes["sender"]["cliente"].publish(clientes["sender"]["publish_topic"], json.dumps(dato), qos=2, retain=True )
@@ -236,7 +236,7 @@ if __name__ == '__main__':
     clienteSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     clienteSock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)       
     # La direccion en blanco equivale a 0.0.0.0 que equivale a INADDR_ANY
-    clienteSock.bind(('' , configData["portudp"]))
+    clienteSock.bind(('' , int(configData["portudp"])))
     logging.info("Socket="+str(clienteSock))
     logging.info("Waiting for message")
     estado={}
@@ -281,8 +281,8 @@ if __name__ == '__main__':
             sentence, origen = clienteSock.recvfrom(1024)
             sentence=sentence.decode("utf-8")
             logging.debug(sentence.strip('\r\n'))
-            if (!estado["ENG"] and estado["FILE"]):   #engine stopped and there is logfile                fileRaw.write(sentence)
-                result, mid = mqttc.publish(configData["log_topic"], sentence, 1, True )
+            if ((not estado["ENG"]) and estado["FILE"]):   #engine stopped and there is logfile 
+                 fileRaw.write(sentence)
             else:
                 pass            
             recibeudp(sentence,estado)
@@ -318,6 +318,16 @@ if __name__ == '__main__':
                     logging.warning("could not JSONize ",'{"measurement":"'+measurement+'","time":'+str(estado["hora"])+',"fields":'+cadena+',"tags":'+tags+'}')
                 i=0
                 estado["ENG"]=False
+                if (estado["FILE"]):
+                    fileRaw.flush()
             i+=1
         except KeyboardInterrupt:
+            if (estado["FILE"]):
+                fileRaw.close()
             break
+        except:
+            if (estado["FILE"]):
+                fileRaw.close()
+            logging.error("Abnormal end of program")
+        exit()
+
