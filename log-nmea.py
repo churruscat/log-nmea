@@ -2,7 +2,7 @@
 ''' chuRRuscat@Morrastronix V1.0  2021
 ************************************************************************************
 Read an udp stream coming from OpenCPN
-Cofiguration data in: /etc/recibeudp/recibeudp.conf
+Configuration data in: /etc/log-nmea/log-nmea.conf
 # log_level: specify log detail. valid values are:
 # none,debug, info, warning, error ,critical
 #[log_level]
@@ -10,7 +10,7 @@ Cofiguration data in: /etc/recibeudp/recibeudp.conf
 #[udp]
 #   port=4000 
 #[raw_file]
-#    filename=/var/log/recibeudp   # program will add yymmdd.log to name
+#    filename=/var/log/log-nmea   # program will add yymmdd.log to name
 
 '''
 import socket
@@ -33,7 +33,7 @@ configData={
     "influxdb":"127.0.0.1",
     "username":"",
     "password":"",
-    "destination_host":"destination.host.com",
+    "destination_mqtt":"destination.host.com",
     "publish_topic":"datosVela",
     "log_topic":"NMEA",
     "port":"1883",
@@ -203,8 +203,8 @@ def leeParser(configfile,configData):
             configData["location"]=parser.get("settings","location")
         if parser.has_option("settings","influxdb"):    
             configData["influxdb"]=parser.get("settings","influxdb")
-        if parser.has_option("settings","destination_host"):    
-            configData["destination_host"]=parser.get("settings","destination_host")          
+        if parser.has_option("settings","destination_mqtt"):    
+            configData["destination_mqtt"]=parser.get("settings","destination_mqtt")          
         if parser.has_option("settings","user_name"):   
             configData["username"]=parser.get("settings","user_name")
         if parser.has_option("settings","password"):    
@@ -269,13 +269,14 @@ if __name__ == '__main__':
         logging.debug("define mqtt client",configData["device_id"])
         mqttc = paho.Client(configData["device_id"], clean_session=True)
         logging.debug("mqtt client defined")
-        mqttc.connect(configData["destination_host"], configData["port"], 60)
+        mqttc.connect(configData["destination_mqtt"], configData["port"], 60)
         logging.debug("mqtt client connected")
         mqttc.reconnect_delay_set(60, 600) 
         #mqttc.username_pw_set(configData["username"] , password=configData["password"])
-        conectado=False
+        conectado=True
     except:
         logging.error("could not connect to remote mqtt")
+        conectado=False
     while True:
         try:
             sentence, origen = clienteSock.recvfrom(1024)
@@ -321,6 +322,19 @@ if __name__ == '__main__':
                 if (estado["FILE"]):
                     fileRaw.flush()
             i+=1
+        if conectado==False:
+            try:  
+                logging.debug("define mqtt client",configData["device_id"])
+                mqttc = paho.Client(configData["device_id"], clean_session=True)
+                logging.debug("mqtt client defined")
+                mqttc.connect(configData["destination_mqtt"], configData["port"], 60)
+                logging.debug("mqtt client connected")
+                mqttc.reconnect_delay_set(60, 600) 
+                #mqttc.username_pw_set(configData["username"] , password=configData["password"])
+                conectado=True
+            except:
+                logging.error("could not connect to remote mqtt")
+                conectado=False
         except KeyboardInterrupt:
             if (estado["FILE"]):
                 fileRaw.close()
@@ -329,5 +343,10 @@ if __name__ == '__main__':
             if (estado["FILE"]):
                 fileRaw.close()
             logging.error("Abnormal end of program")
+
+<<<<<<< Updated upstream
         exit()
+=======
+    exit()
+>>>>>>> Stashed changes
 

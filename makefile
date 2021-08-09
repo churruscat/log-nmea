@@ -6,7 +6,11 @@ default: build
 # First you need to prepare buildx => docker buildx create --name multi && docker buildx use multi
 
 build:
+<<<<<<< Updated upstream
 	docker buildx build .  --platform=linux/arm64,linux/arm/v7 -t $(DOCKER_IMAGE_TAGNAME) -t $(DOCKER_IMAGE_NAME):latest --push 
+=======
+	docker buildx build .  --platform=linux/arm/v7 -t $(DOCKER_IMAGE_TAGNAME) -t $(DOCKER_IMAGE_NAME):latest --push 
+>>>>>>> Stashed changes
 #        docker buildx build .  --platform=linux/arm64,linux/arm/v7 --tag $(DOCKER_IMAGE_NAME):latest  
 #	docker build -t $(DOCKER_IMAGE_TAGNAME) .
 #	docker tag $(DOCKER_IMAGE_TAGNAME) $(DOCKER_IMAGE_NAME):latest
