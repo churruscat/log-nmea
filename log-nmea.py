@@ -159,11 +159,12 @@ def NMEA_GPVTG(datos):
 
 def NMEA_ERRPM(datos,estado):  
     #$ERRPM,E|S,Speed,%,A*CRC
+    logging.debug(estado["RPM"]) 
     if datos[4]=="A":
         if datos[2]>1:
             estado["RPM"]=datos[2]
         else:
-            estado["RPM"]=1
+            estado["RPM"]=0
         estado["ENG"]=True
     else:
         estado["RPM"]=0  
@@ -322,19 +323,19 @@ if __name__ == '__main__':
                 if (estado["FILE"]):
                     fileRaw.flush()
             i+=1
-        if conectado==False:
-            try:  
-                logging.debug("define mqtt client",configData["device_id"])
-                mqttc = paho.Client(configData["device_id"], clean_session=True)
-                logging.debug("mqtt client defined")
-                mqttc.connect(configData["destination_mqtt"], configData["port"], 60)
-                logging.debug("mqtt client connected")
-                mqttc.reconnect_delay_set(60, 600) 
-                #mqttc.username_pw_set(configData["username"] , password=configData["password"])
-                conectado=True
-            except:
-                logging.error("could not connect to remote mqtt")
-                conectado=False
+            if conectado==False:
+                try:  
+                    logging.debug("define mqtt client",configData["device_id"])
+                    mqttc = paho.Client(configData["device_id"], clean_session=True)
+                    logging.debug("mqtt client defined")
+                    mqttc.connect(configData["destination_mqtt"], configData["port"], 60)
+                    logging.debug("mqtt client connected")
+                    mqttc.reconnect_delay_set(60, 600) 
+                    #mqttc.username_pw_set(configData["username"] , password=configData["password"])
+                    conectado=True
+                except:
+                    logging.error("could not connect to remote mqtt")
+                    conectado=False
         except KeyboardInterrupt:
             if (estado["FILE"]):
                 fileRaw.close()
@@ -343,10 +344,5 @@ if __name__ == '__main__':
             if (estado["FILE"]):
                 fileRaw.close()
             logging.error("Abnormal end of program")
-
-<<<<<<< Updated upstream
-        exit()
-=======
     exit()
->>>>>>> Stashed changes
 
