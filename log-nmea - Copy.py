@@ -1,10 +1,8 @@
 #!/usr/bin/env python
 ''' chuRRuscat@Morrastronix V1.0  2021
 ************************************************************************************
-Read an udp stream coming from OpenCPN and :
-   - summarizes it and sends it to an mqtt queue
-   - if engine is stopped, stores all the fdta in a file
-Configuration data in: /etc/log-nmea/log-nmea.conf
+Read an udp stream coming from OpenCPN
+Cofiguration data in: /etc/recibeudp/recibeudp.conf
 # log_level: specify log detail. valid values are:
 # none,debug, info, warning, error ,critical
 #[log_level]
@@ -12,7 +10,7 @@ Configuration data in: /etc/log-nmea/log-nmea.conf
 #[udp]
 #   port=4000 
 #[raw_file]
-#    filename=/var/log/log-nmea   # program will add yymmdd.log to name
+#    filename=/var/log/recibeudp   # program will add yymmdd.log to name
 
 '''
 import socket
@@ -25,7 +23,7 @@ from datetime import datetime
 from time import time
 #import pynmea2
 
-configFile='/etc/log-nmea/log-nmea.conf'
+configFile='/etc/recibeudp/recibeudp.conf'
 tipoLogging=['none','debug', 'info', 'warning', 'error' ,'critical']
 tags={"deviceId":"Raymarine","location":"Barco"}
 measurement='NMEA'
@@ -35,18 +33,23 @@ configData={
     "influxdb":"127.0.0.1",
     "username":"",
     "password":"",
-    "destination_mqtt":"destination.host.com",
+    "destination_host":"destination.host.com",
     "publish_topic":"datosVela",
     "log_topic":"NMEA",
     "port":"1883",
     "portudp":"4000",
     "loglevel":"info",
-    "fileraw":"",
-    "num_records":100
+    "fileraw":""
     }
 
-def recibeudp(datos,estado):
-    #datos=sentence.split(',')
+def recibeudp(sentence,estado):
+    ''' secs,usecs=divmod(time(),1)   # si a time() le restara altzone tendria la hora local
+    if secs-estado["epoch"] < 1800 :
+        estado["hora"]=str(int(estado["epoch"]))+str(int(usecs*1000000000))
+    else:
+        estado["hora"]=str(int(secs))+str(int(usecs*1000000000))
+    ''' 
+    datos=sentence.split(',')
     if datos[0]=="$IIHDM":     #Heading
         pass    #NMEA_IIHDM(datos,estado)
     elif datos[0]=="$IIMTW":
@@ -155,16 +158,17 @@ def NMEA_GPVTG(datos):
 
 def NMEA_ERRPM(datos,estado):  
     #$ERRPM,E|S,Speed,%,A*CRC
-    logging.debug(estado["RPM"]) 
-    if int(datos[2])>0:
-        estado["RPM"]=1
-        estado["ENG"]=True
+    if datos[4]=="A":
+        if datos[2]>1:
+            estado["RPM"]=datos[2]
+        else:
+            estado["RPM"]=1
+        estado["ENG"]=1
     else:
-        estado["RPM"]=0
-        estado["ENG"]=False
+        estado["RPM"]=0  
     logging.info("RPM="+str(estado["RPM"]))   
 
-def escribe(linea):
+def escribe(linea)
     if len(clientes["sender"]["broker"])>2:
         try:   
             result, mid = clientes["sender"]["cliente"].publish(clientes["sender"]["publish_topic"], json.dumps(dato), qos=2, retain=True )
@@ -187,63 +191,81 @@ def leeParser(configfile,configData):
         if parser.has_option("log_level","log_level"):  
             configData["loglevel"]=parser.get("log_level","log_level")
             print("loglevel=",log_level)
+    print("log_level="+str(log_level))
     logging.basicConfig(stream=sys.stderr, format = '%(asctime)-15s  %(message)s', level=log_level.upper()) 
     if parser.has_section("udp"):
         if parser.has_option("udp","port"):
             configData["portudp"]=int(parser.get("udp","port"))
+        else:
+            configData["portudp"]=4000
     if parser.has_section("settings"):
         if parser.has_option("settings","device_id"):   
-            configData["device_id"]=parser.get("settings","device_id")      
+            configData["device_id"]=parser.get("settings","device_id")
+        else:
+            configData["device_id"]='Raymarine'
         if parser.has_option("settings","location"):    
             configData["location"]=parser.get("settings","location")
+        else:
+            configData["location"]='Nowhere'
         if parser.has_option("settings","influxdb"):    
             configData["influxdb"]=parser.get("settings","influxdb")
-        if parser.has_option("settings","destination_mqtt"):    
-            configData["destination_mqtt"]=parser.get("settings","destination_mqtt")          
+        else:
+            configData["influxdb"]='127.0.0.1'
+        if parser.has_option("settings","destination_host"):    
+            configData["destination_host"]=parser.get("settings","destination_host")          
         if parser.has_option("settings","user_name"):   
             configData["username"]=parser.get("settings","user_name")
+        else:
+            configData["username"]=''
         if parser.has_option("settings","password"):    
             configData["password"]=parser.get("settings","password")
+        else:
+            configData["password"]=''        
         if parser.has_option("settings","publish_topic"):   
             configData["publish_topic"]=parser.get("settings","publish_topic")
+        else:
+            configData["publish_topic"]='datosVela'
         if parser.has_option("settings","log_topic"):   
             configData["log_topic"]=parser.get("settings","log_topic")                
+        else:
+            configData["log_topic"]='NMEA'
         if parser.has_option("settings","port"):   
             configData["port"]=int(parser.get("settings","port"))
-        if parser.has_option("settings","num_records"):   
-            configData[
-            "num_records"]=int(parser.get("settings","num_records"))            
-
-    filename=""
+        else:
+            configData["port"]=1883
+    #filename="/var/log/recibeudp"
+    filename="recibeudp"
     if parser.has_section("rawfile"):
         if parser.has_option("raw_file","filename"):    
             configData["fileraw"]=parser.get("raw_file","filename")
     return
 
 if __name__ == '__main__':
+    #mqttc = paho.Client(clientId)
+    #configData=json.loads(configData_F) 
     leeParser(configFile,configData)
     tags["deviceId"]=configData["device_id"]
     tags["location"]=configData["location"]
     logging.info(configData)
+
    
     # Create  socket AF_INET:ipv4, SOCK_DGAM:udp
     clienteSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     clienteSock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)       
     # La direccion en blanco equivale a 0.0.0.0 que equivale a INADDR_ANY
-    clienteSock.bind(('' , int(configData["portudp"])))
+    clienteSock.bind(('' , configData["portudp"]))
     logging.info("Socket="+str(clienteSock))
     logging.info("Waiting for message")
     estado={}
     estado["RPM"]=0
     if configData["fileraw"]=='':
-        estado["FILE"]=False
+        estado["FILE"]=0
     else:
-        estado["FILE"]=True
+        estado["FILE"]=1
         ahora = datetime.now()
         configData["fileraw"]=configData["fileraw"]+'-'+str(ahora.strftime("%Y%m%d"))+".log"
         fileRaw=open(configData["fileraw"],"a")         
-    estado["ENG"]=False
-    estado["RPM"]=0
+    estado["ENG"]=0
     estado["epoch"]=0
     estado["hora"]=0
     estado["AWA"]=""
@@ -264,34 +286,27 @@ if __name__ == '__main__':
         logging.debug("define mqtt client",configData["device_id"])
         mqttc = paho.Client(configData["device_id"], clean_session=True)
         logging.debug("mqtt client defined")
-        mqttc.connect(configData["destination_mqtt"], configData["port"], 60)
+        mqttc.connect(configData["destination_host"], configData["port"], 60)
         logging.debug("mqtt client connected")
         mqttc.reconnect_delay_set(60, 600) 
         #mqttc.username_pw_set(configData["username"] , password=configData["password"])
-        conectado=True
+        conectado=False
     except:
         logging.error("could not connect to remote mqtt")
-        conectado=False
     while True:
         try:
             sentence, origen = clienteSock.recvfrom(1024)
             sentence=sentence.decode("utf-8")
             logging.debug(sentence.strip('\r\n'))
-            if ((not estado["ENG"]) and estado["FILE"]):   #engine stopped and there is logfile 
-                 fileRaw.write(sentence)
+            if (estado["ENG"]==0 and estado["FILE"]==1):
+                fileRaw.write(sentence)
+                result, mid = mqttc.publish(configData["log_topic"], sentence, 1, True )
             else:
-<<<<<<< HEAD
                 pass            
             recibeudp(sentence,estado)
-            if i>50:
+            if i>100:
                 #dato='{"measurement":"'+"NMEA"+'","time":'+estado["epoch"]+\
                 #',"fields":'+json.dumps(payload[0])+',"tags":'+tags+'}'
-=======
-                pass
-            datos=sentence.split(',')            
-            recibeudp(datos,estado)
-            if (i>configData["num_records"]):
->>>>>>> develop
                 cadena='"RPM"'+':'+str(estado["RPM"])+','
                 cadena=cadena+'"AWA":'+estado["AWA"]+',' if estado["AWA"]!='' else cadena
                 cadena=cadena+'"AWS":'+estado["AWS"]+',' if estado["AWS"]!='' else cadena
@@ -310,37 +325,17 @@ if __name__ == '__main__':
                 cadena='{'+cadena +'}'
                 try:
                     cadena='{"measurement":"'+measurement+'","time":'+str(estado["hora"])+',"fields":'+cadena+',"tags":'+json.dumps(tags)+'}'
+                    #datoJSON=json.loads('{"measurement":"'+measurement+'","time":'+str(estado["hora"])+',"fields":'+cadena+',"tags":'+json.dumps(tags)+'}')
+                    logging.debug(cadena)
+                    #datoJSON=json.loads(cadena)
                     datoJSON=cadena
                     logging.info(datoJSON)
                     result, mid = mqttc.publish(configData["publish_topic"], datoJSON, 1, True )
+                    #FALTA ENVIAR A MQTT
                 except:
                     logging.warning("could not JSONize ",'{"measurement":"'+measurement+'","time":'+str(estado["hora"])+',"fields":'+cadena+',"tags":'+tags+'}')
                 i=0
-                estado["ENG"]=False
-                if (estado["FILE"]):
-                    fileRaw.flush()
-            if datos[0]!="$ERRPM":  # only increments counter if data is different of $ERRPM
-                i+=1
-            if conectado==False:
-                try:  
-                    logging.debug("define mqtt client",configData["device_id"])
-                    mqttc = paho.Client(configData["device_id"], clean_session=True)
-                    logging.debug("mqtt client defined")
-                    mqttc.connect(configData["destination_mqtt"], configData["port"], 60)
-                    logging.debug("mqtt client connected")
-                    mqttc.reconnect_delay_set(60, 600) 
-                    #mqttc.username_pw_set(configData["username"] , password=configData["password"])
-                    conectado=True
-                except:
-                    logging.error("could not connect to remote mqtt")
-                    conectado=False
+                estado["ENG"]=0
+            i+=1
         except KeyboardInterrupt:
-            if (estado["FILE"]):
-                fileRaw.close()
             break
-        except:
-            if (estado["FILE"]):
-                fileRaw.close()
-            logging.error("Abnormal end of program")
-    exit()
-
