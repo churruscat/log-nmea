@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 ''' chuRRuscat@Morrastronix V1.0  2021
 ************************************************************************************
-Read an udp stream coming from OpenCPN
+Read an udp stream coming from OpenCPN and :
+   - summarizes it and sends it to an mqtt queue
+   - if engine is stopped, stores all the fdta in a file
 Configuration data in: /etc/log-nmea/log-nmea.conf
 # log_level: specify log detail. valid values are:
 # none,debug, info, warning, error ,critical
@@ -40,17 +42,11 @@ configData={
     "portudp":"4000",
     "loglevel":"info",
     "fileraw":"",
-    "num_records":50
+    "num_records":100
     }
 
-def recibeudp(sentence,estado):
-    ''' secs,usecs=divmod(time(),1)   # si a time() le restara altzone tendria la hora local
-    if secs-estado["epoch"] < 1800 :
-        estado["hora"]=str(int(estado["epoch"]))+str(int(usecs*1000000000))
-    else:
-        estado["hora"]=str(int(secs))+str(int(usecs*1000000000))
-    ''' 
-    datos=sentence.split(',')
+def recibeudp(datos,estado):
+    #datos=sentence.split(',')
     if datos[0]=="$IIHDM":     #Heading
         pass    #NMEA_IIHDM(datos,estado)
     elif datos[0]=="$IIMTW":
@@ -160,14 +156,12 @@ def NMEA_GPVTG(datos):
 def NMEA_ERRPM(datos,estado):  
     #$ERRPM,E|S,Speed,%,A*CRC
     logging.debug(estado["RPM"]) 
-    if datos[4]=="A":
-        if datos[2]>1:
-            estado["RPM"]=datos[2]
-        else:
-            estado["RPM"]=0
+    if int(datos[2])>0:
+        estado["RPM"]=1
         estado["ENG"]=True
     else:
-        estado["RPM"]=0  
+        estado["RPM"]=0
+        estado["ENG"]=False
     logging.info("RPM="+str(estado["RPM"]))   
 
 def escribe(linea):
@@ -217,7 +211,8 @@ def leeParser(configfile,configData):
         if parser.has_option("settings","port"):   
             configData["port"]=int(parser.get("settings","port"))
         if parser.has_option("settings","num_records"):   
-            configData["num_records"]=int(parser.get("settings","num_records"))            
+            configData[
+            "num_records"]=int(parser.get("settings","num_records"))            
 
     filename=""
     if parser.has_section("rawfile"):
@@ -226,8 +221,6 @@ def leeParser(configfile,configData):
     return
 
 if __name__ == '__main__':
-    #mqttc = paho.Client(clientId)
-    #configData=json.loads(configData_F) 
     leeParser(configFile,configData)
     tags["deviceId"]=configData["device_id"]
     tags["location"]=configData["location"]
@@ -250,6 +243,7 @@ if __name__ == '__main__':
         configData["fileraw"]=configData["fileraw"]+'-'+str(ahora.strftime("%Y%m%d"))+".log"
         fileRaw=open(configData["fileraw"],"a")         
     estado["ENG"]=False
+    estado["RPM"]=0
     estado["epoch"]=0
     estado["hora"]=0
     estado["AWA"]=""
@@ -286,11 +280,10 @@ if __name__ == '__main__':
             if ((not estado["ENG"]) and estado["FILE"]):   #engine stopped and there is logfile 
                  fileRaw.write(sentence)
             else:
-                pass            
-            recibeudp(sentence,estado)
-            if i>configData["num_records"]:
-                #dato='{"measurement":"'+"NMEA"+'","time":'+estado["epoch"]+\
-                #',"fields":'+json.dumps(payload[0])+',"tags":'+tags+'}'
+                pass
+            datos=sentence.split(',')            
+            recibeudp(datos,estado)
+            if (i>configData["num_records"]):
                 cadena='"RPM"'+':'+str(estado["RPM"])+','
                 cadena=cadena+'"AWA":'+estado["AWA"]+',' if estado["AWA"]!='' else cadena
                 cadena=cadena+'"AWS":'+estado["AWS"]+',' if estado["AWS"]!='' else cadena
@@ -309,20 +302,17 @@ if __name__ == '__main__':
                 cadena='{'+cadena +'}'
                 try:
                     cadena='{"measurement":"'+measurement+'","time":'+str(estado["hora"])+',"fields":'+cadena+',"tags":'+json.dumps(tags)+'}'
-                    #datoJSON=json.loads('{"measurement":"'+measurement+'","time":'+str(estado["hora"])+',"fields":'+cadena+',"tags":'+json.dumps(tags)+'}')
-                    logging.debug(cadena)
-                    #datoJSON=json.loads(cadena)
                     datoJSON=cadena
                     logging.info(datoJSON)
                     result, mid = mqttc.publish(configData["publish_topic"], datoJSON, 1, True )
-                    #FALTA ENVIAR A MQTT
                 except:
                     logging.warning("could not JSONize ",'{"measurement":"'+measurement+'","time":'+str(estado["hora"])+',"fields":'+cadena+',"tags":'+tags+'}')
                 i=0
                 estado["ENG"]=False
                 if (estado["FILE"]):
                     fileRaw.flush()
-            i+=1
+            if datos[0]!="$ERRPM":  # only increments counter if data is different of $ERRPM
+                i+=1
             if conectado==False:
                 try:  
                     logging.debug("define mqtt client",configData["device_id"])
