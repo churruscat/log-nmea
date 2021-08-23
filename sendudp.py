@@ -1,3 +1,7 @@
+#!/usr/bin/env python
+''' chuRRuscat@Morrastronix V1.0  2021
+*****************************************
+'''
 import socket
 import sys
 import argparse

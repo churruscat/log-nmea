@@ -1,16 +1,18 @@
 #!/usr/bin/env python
 ''' chuRRuscat@Morrastronix V1.0  2021
 ************************************************************************************
-Read an udp stream coming from OpenCPN
-Cofiguration data in: /etc/recibeudp/recibeudp.conf
-# log_level: specify log detail. valid values are:
+Read an udp stream coming from OpenCPN and :
+   - summarizes it and sends it to an mqtt queue
+   - if engine is stopped, stores all the fdta in a file
+Configuration data in: /etc/log-nmea/log-nmea.conf
+# loglevel: specify log detail. valid values are:
 # none,debug, info, warning, error ,critical
-#[log_level]
-#   log_level=warning
+#[loglevel]
+#   loglevel=warning
 #[udp]
 #   port=4000 
-#[raw_file]
-#    filename=/var/log/recibeudp   # program will add yymmdd.log to name
+#[rawfile]
+#    filename=/var/log/log-nmea   # program will add yymmdd.log to name
 
 '''
 import socket
@@ -23,33 +25,28 @@ from datetime import datetime
 from time import time
 #import pynmea2
 
-configFile='/etc/recibeudp/recibeudp.conf'
+configFile='/etc/log-nmea/log-nmea.conf'
 tipoLogging=['none','debug', 'info', 'warning', 'error' ,'critical']
-tags={"deviceId":"Raymarine","location":"Barco"}
+tags={'deviceId':'Raymarine','location':'Barco'}
 measurement='NMEA'
 configData={
     "device_id":"NMEA",
-    "location":"Barco",
+    "location":"Boat",
     "influxdb":"127.0.0.1",
     "username":"",
     "password":"",
-    "destination_host":"destination.host.com",
+    "destination_mqtt":"destination.host.com",
     "publish_topic":"datosVela",
     "log_topic":"NMEA",
     "port":"1883",
     "portudp":"4000",
     "loglevel":"info",
-    "fileraw":""
+    "rawfile":"",
+    "num_records":100
     }
 
-def recibeudp(sentence,estado):
-    ''' secs,usecs=divmod(time(),1)   # si a time() le restara altzone tendria la hora local
-    if secs-estado["epoch"] < 1800 :
-        estado["hora"]=str(int(estado["epoch"]))+str(int(usecs*1000000000))
-    else:
-        estado["hora"]=str(int(secs))+str(int(usecs*1000000000))
-    ''' 
-    datos=sentence.split(',')
+def recibeudp(datos,estado):
+    #datos=sentence.split(',')
     if datos[0]=="$IIHDM":     #Heading
         pass    #NMEA_IIHDM(datos,estado)
     elif datos[0]=="$IIMTW":
@@ -158,17 +155,16 @@ def NMEA_GPVTG(datos):
 
 def NMEA_ERRPM(datos,estado):  
     #$ERRPM,E|S,Speed,%,A*CRC
-    if datos[4]=="A":
-        if datos[2]>1:
-            estado["RPM"]=datos[2]
-        else:
-            estado["RPM"]=1
-        estado["ENG"]=1
+    logging.debug(estado["RPM"]) 
+    if int(datos[2])>0:
+        estado["RPM"]=1
+        estado["ENG"]=True
     else:
-        estado["RPM"]=0  
-    logging.info("RPM="+str(estado["RPM"]))   
+        estado["RPM"]=0
+        estado["ENG"]=False
+    logging.debug("RPM="+str(estado["RPM"]))   
 
-def escribe(linea)
+def escribe(linea):
     if len(clientes["sender"]["broker"])>2:
         try:   
             result, mid = clientes["sender"]["cliente"].publish(clientes["sender"]["publish_topic"], json.dumps(dato), qos=2, retain=True )
@@ -183,89 +179,72 @@ def escribe(linea)
             sleep(30)
             logging.warning("Connection lost with Sender destination. Retrying")
             arrancaCliente(clientes["sender"],True)
-def leeParser(configfile,configData):
+
+def leeParser(configFile,configData):
     parser = ConfigParser()
     parser.read(configFile)
-    log_level='info'
-    if parser.has_section("log_level"):
-        if parser.has_option("log_level","log_level"):  
-            configData["loglevel"]=parser.get("log_level","log_level")
-            print("loglevel=",log_level)
-    print("log_level="+str(log_level))
-    logging.basicConfig(stream=sys.stderr, format = '%(asctime)-15s  %(message)s', level=log_level.upper()) 
+    if parser.has_section("loglevel"):
+        if parser.has_option("loglevel","loglevel"):  
+            configData["loglevel"]=parser.get("loglevel","loglevel")
+    logging.basicConfig(stream=sys.stderr, format = '%(asctime)-15s  %(message)s', level=configData["loglevel"].upper()) 
     if parser.has_section("udp"):
         if parser.has_option("udp","port"):
             configData["portudp"]=int(parser.get("udp","port"))
-        else:
-            configData["portudp"]=4000
     if parser.has_section("settings"):
         if parser.has_option("settings","device_id"):   
-            configData["device_id"]=parser.get("settings","device_id")
-        else:
-            configData["device_id"]='Raymarine'
+            configData["device_id"]=parser.get("settings","device_id")      
         if parser.has_option("settings","location"):    
             configData["location"]=parser.get("settings","location")
-        else:
-            configData["location"]='Nowhere'
         if parser.has_option("settings","influxdb"):    
             configData["influxdb"]=parser.get("settings","influxdb")
-        else:
-            configData["influxdb"]='127.0.0.1'
-        if parser.has_option("settings","destination_host"):    
-            configData["destination_host"]=parser.get("settings","destination_host")          
+        if parser.has_option("settings","destination_mqtt"):    
+            configData["destination_mqtt"]=parser.get("settings","destination_mqtt")          
         if parser.has_option("settings","user_name"):   
             configData["username"]=parser.get("settings","user_name")
-        else:
-            configData["username"]=''
         if parser.has_option("settings","password"):    
             configData["password"]=parser.get("settings","password")
-        else:
-            configData["password"]=''        
         if parser.has_option("settings","publish_topic"):   
             configData["publish_topic"]=parser.get("settings","publish_topic")
-        else:
-            configData["publish_topic"]='datosVela'
         if parser.has_option("settings","log_topic"):   
             configData["log_topic"]=parser.get("settings","log_topic")                
-        else:
-            configData["log_topic"]='NMEA'
         if parser.has_option("settings","port"):   
             configData["port"]=int(parser.get("settings","port"))
-        else:
-            configData["port"]=1883
-    #filename="/var/log/recibeudp"
-    filename="recibeudp"
+        if parser.has_option("settings","num_records"):   
+            configData[
+            "num_records"]=int(parser.get("settings","num_records"))            
+
+    filename=""
     if parser.has_section("rawfile"):
-        if parser.has_option("raw_file","filename"):    
-            configData["fileraw"]=parser.get("raw_file","filename")
+        if parser.has_option("rawfile","filename"):    
+            configData["rawfile"]=parser.get("rawfile","rawfile")
+    else:
+        configData["rawfile"]=''
     return
 
 if __name__ == '__main__':
-    #mqttc = paho.Client(clientId)
-    #configData=json.loads(configData_F) 
     leeParser(configFile,configData)
     tags["deviceId"]=configData["device_id"]
     tags["location"]=configData["location"]
     logging.info(configData)
-
-   
     # Create  socket AF_INET:ipv4, SOCK_DGAM:udp
     clienteSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     clienteSock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)       
     # La direccion en blanco equivale a 0.0.0.0 que equivale a INADDR_ANY
-    clienteSock.bind(('' , configData["portudp"]))
+    clienteSock.bind(('' , int(configData["portudp"])))
     logging.info("Socket="+str(clienteSock))
     logging.info("Waiting for message")
     estado={}
     estado["RPM"]=0
-    if configData["fileraw"]=='':
-        estado["FILE"]=0
+    if configData["rawfile"]=='':
+        estado["FILE"]=False
     else:
-        estado["FILE"]=1
+        estado["FILE"]=True
         ahora = datetime.now()
-        configData["fileraw"]=configData["fileraw"]+'-'+str(ahora.strftime("%Y%m%d"))+".log"
-        fileRaw=open(configData["fileraw"],"a")         
-    estado["ENG"]=0
+        configData["rawfile"]=configData["rawfile"]+'-'+str(ahora.strftime("%Y%m%d"))
+        logging.debug("log filename="+configData["rawfile"])
+        fileNMEA=open(configData["rawfile"],"a")         
+    estado["ENG"]=False
+    estado["RPM"]=0
     estado["epoch"]=0
     estado["hora"]=0
     estado["AWA"]=""
@@ -280,62 +259,89 @@ if __name__ == '__main__':
     estado["SOG"]=""
     estado["Head_T"]=""
     estado["Head_M"]=""
-    estado["Mag_dev"]  =""
+    estado["Mag_dev"] =""
+    logging.debug("end of inicialization")
     i=0
     try:  
-        logging.debug("define mqtt client",configData["device_id"])
-        mqttc = paho.Client(configData["device_id"], clean_session=True)
+        logging.debug("define mqtt client")
+        logging.debug(configData["device_id"])
+        #mqttc = paho.Client(configData["device_id"], clean_session=True)
+        mqttc = paho.Client(clean_session=True)
         logging.debug("mqtt client defined")
-        mqttc.connect(configData["destination_host"], configData["port"], 60)
         logging.debug("mqtt client connected")
         mqttc.reconnect_delay_set(60, 600) 
         #mqttc.username_pw_set(configData["username"] , password=configData["password"])
-        conectado=False
+        mqttc.loop_start()  
+        conectado=True
     except:
         logging.error("could not connect to remote mqtt")
+        conectado=False
     while True:
         try:
             sentence, origen = clienteSock.recvfrom(1024)
             sentence=sentence.decode("utf-8")
-            logging.debug(sentence.strip('\r\n'))
-            if (estado["ENG"]==0 and estado["FILE"]==1):
-                fileRaw.write(sentence)
-                result, mid = mqttc.publish(configData["log_topic"], sentence, 1, True )
+            if ((not estado["ENG"]) and estado["FILE"]):   #engine stopped and there is logfile 
+                 fileNMEA.write(sentence)
             else:
-                pass            
-            recibeudp(sentence,estado)
-            if i>100:
-                #dato='{"measurement":"'+"NMEA"+'","time":'+estado["epoch"]+\
-                #',"fields":'+json.dumps(payload[0])+',"tags":'+tags+'}'
-                cadena='"RPM"'+':'+str(estado["RPM"])+','
-                cadena=cadena+'"AWA":'+estado["AWA"]+',' if estado["AWA"]!='' else cadena
-                cadena=cadena+'"AWS":'+estado["AWS"]+',' if estado["AWS"]!='' else cadena
-                cadena=cadena+'"TWA":'+estado["TWA"]+',' if estado["TWA"]!='' else cadena   
-                cadena=cadena+'"TWS":'+estado["TWS"]+',' if estado["TWS"]!='' else cadena
-                cadena=cadena+'"lat":'+str(round(estado["lat"],7))+',' if estado["lat"]!='' else cadena
-                cadena=cadena+'"lon":'+str(round(estado["lon"],7))+',' if estado["lon"]!='' else cadena
-                cadena=cadena+'"Water_T":'+estado["Water_T"]+',' if estado["Water_T"]!='' else cadena
-                cadena=cadena+'"Rudder_A":'+estado["Rudder_A"]+',' if estado["Rudder_A"]!='' else cadena
-                cadena=cadena+'"SOW":'+estado["SOW"]+',' if estado["SOW"]!='' else cadena
-                cadena=cadena+'"SOG":'+estado["SOG"]+',' if estado["SOG"]!='' else cadena
-                cadena=cadena+'"Head_T":'+estado["Head_T"]+',' if estado["Head_T"]!='' else cadena
-                cadena=cadena+'"Head_M":'+estado["Head_M"]+',' if estado["Head_M"]!='' else cadena
-                #cadena=cadena+'"Mag_dev":'+estado["Mag_dev"] if estado["Mag_dev"]!='' else cadena
+                pass
+            datos=sentence.split(',')            
+            recibeudp(datos,estado)
+            if (i>configData["num_records"]):
+                cadena="'RPK'"+':'+str(estado["RPM"])+','
+                cadena=cadena+"'AWA':"+estado["AWA"]+',' if estado["AWA"]!='' else cadena
+                cadena=cadena+"'AWS':"+estado["AWS"]+',' if estado["AWS"]!='' else cadena
+                cadena=cadena+"'TWA':"+estado["TWA"]+',' if estado["TWA"]!='' else cadena   
+                cadena=cadena+"'TWS':"+estado["TWS"]+',' if estado["TWS"]!='' else cadena
+                cadena=cadena+"'lat':"+str(round(estado["lat"],7))+',' if estado["lat"]!='' else cadena
+                cadena=cadena+"'lon':"+str(round(estado["lon"],7))+',' if estado["lon"]!='' else cadena
+                cadena=cadena+"'Water_T':"+estado["Water_T"]+',' if estado["Water_T"]!='' else cadena
+                cadena=cadena+"'Rudder_A':"+estado["Rudder_A"]+',' if estado["Rudder_A"]!='' else cadena
+                cadena=cadena+"'SOW':"+estado["SOW"]+',' if estado["SOW"]!='' else cadena
+                cadena=cadena+"'SOG':"+estado["SOG"]+',' if estado["SOG"]!='' else cadena
+                cadena=cadena+"'Head_T':"+estado["Head_T"]+',' if estado["Head_T"]!='' else cadena
+                cadena=cadena+"'Head_M':"+estado["Head_M"]+',' if estado["Head_M"]!='' else cadena
+                #cadena=cadena+"'Mag_dev':"+estado["Mag_dev"] if estado["Mag_dev"]!='' else cadena
                 cadena=cadena.strip(',')
                 cadena='{'+cadena +'}'
+                lostags="{'deviceId':\""+tags["deviceId"]+"\",'location'"+":\""+tags["location"]+"\"}"
+                logging.debug(cadena)
+                logging.debug(lostags)
                 try:
-                    cadena='{"measurement":"'+measurement+'","time":'+str(estado["hora"])+',"fields":'+cadena+',"tags":'+json.dumps(tags)+'}'
-                    #datoJSON=json.loads('{"measurement":"'+measurement+'","time":'+str(estado["hora"])+',"fields":'+cadena+',"tags":'+json.dumps(tags)+'}')
-                    logging.debug(cadena)
-                    #datoJSON=json.loads(cadena)
-                    datoJSON=cadena
-                    logging.info(datoJSON)
-                    result, mid = mqttc.publish(configData["publish_topic"], datoJSON, 1, True )
-                    #FALTA ENVIAR A MQTT
+                    #datosJSON=json.dumps('{"measurement":"'+measurement+'","time":'+str(estado["hora"])+',"fields":'+cadena+',"tags":'+tags+'}')
+                    datosJSON1=  "{'measurement':\""+measurement+"\",'time':"+str(estado["hora"])+",'fields':"+cadena+",'tags':"+lostags+"}"
+                    #datosJSON1=["'measurement':'"+measurement+"','time':"+str(estado["hora"])+",'fields':"+cadena+ ",'tags':"+json.dumps(tags)]
+                    datosJSON=json.loads(datosJSON1)
+                    logging.info(datosJSON)
+                    result, mid = mqttc.publish(configData["publish_topic"], datosJSON, 1, True )
                 except:
-                    logging.warning("could not JSONize ",'{"measurement":"'+measurement+'","time":'+str(estado["hora"])+',"fields":'+cadena+',"tags":'+tags+'}')
+                    logging.warning("could not JSONize "+datosJSON1)
                 i=0
-                estado["ENG"]=0
-            i+=1
+                estado["ENG"]=False
+                if (estado["FILE"]):
+                    fileNMEA.flush()
+            if datos[0]!="$ERRPM":  # only increments counter if data is different of $ERRPM
+                i+=1
+            if conectado==False:
+                try:  
+                    logging.debug("define mqtt client",configData["device_id"])
+                    #mqttc = paho.Client(configData["device_id"], clean_session=True)
+                    mqttc = paho.Client(clean_session=True)
+                    logging.debug("mqtt client defined")
+                    mqttc.connect(configData["destination_mqtt"], configData["port"], 60)
+                    logging.debug("mqtt client connected")
+                    mqttc.reconnect_delay_set(60, 600) 
+                    #mqttc.username_pw_set(configData["username"] , password=configData["password"])
+                    conectado=True
+                except:
+                    logging.error("could not connect to remote mqtt")
+                    conectado=False
         except KeyboardInterrupt:
+            if (estado["FILE"]):
+                fileNMEA.close()
             break
+        except:
+            if (estado["FILE"]):
+                fileNMEA.close()
+            logging.error("Abnormal end of program")
+    exit()
+

@@ -3,15 +3,15 @@
 ************************************************************************************
 Read an udp stream coming from OpenCPN and :
    - summarizes it and sends it to an mqtt queue
-   - if engine is stopped, stores all the fdta in a file
+   - if engine is stopped, stores all data in a file
 Configuration data in: /etc/log-nmea/log-nmea.conf
-# log_level: specify log detail. valid values are:
+# loglevel: specify log detail. valid values are:
 # none,debug, info, warning, error ,critical
-#[log_level]
-#   log_level=warning
+#[loglevel]
+#   loglevel=warning
 #[udp]
 #   port=4000 
-#[raw_file]
+#[rawfile]
 #    filename=/var/log/log-nmea   # program will add yymmdd.log to name
 
 '''
@@ -19,7 +19,7 @@ import socket
 import sys
 import logging, json
 from configparser import ConfigParser
-import paho.mqtt.client as paho
+import paho.mqtt.client as mqtt
 from datetime import datetime
 #import datetime
 from time import time
@@ -27,48 +27,80 @@ from time import time
 
 configFile='/etc/log-nmea/log-nmea.conf'
 tipoLogging=['none','debug', 'info', 'warning', 'error' ,'critical']
-tags={"deviceId":"Raymarine","location":"Barco"}
 measurement='NMEA'
 configData={
     "device_id":"NMEA",
-    "location":"Barco",
+    "location":"Boat",
     "influxdb":"127.0.0.1",
     "username":"",
     "password":"",
     "destination_mqtt":"destination.host.com",
-    "publish_topic":"datosVela",
+    "publish_topic":"cooked",
     "log_topic":"NMEA",
     "port":"1883",
     "portudp":"4000",
     "loglevel":"info",
-    "fileraw":"",
+    "rawfile":"",
     "num_records":100
     }
+mqttCliente={"name":"log_nmea","broker":"","port":1883,
+              "cliente":None,"userid":"","password":"",
+              "publish_topic":"cooked"}
+estado={
+    "ENG":True, 
+    "RPM":1,
+    "epoch":0, 
+    "FILE":False
+    }
 
-def recibeudp(datos,estado):
+datosJSON={    
+    "measurement":"medidas",
+    "time":0,
+    "fields": {
+        "RPM":0,
+        "AWA":0,
+        "AWS":0,
+        "TWA":0,
+        "TWS":0,
+        "lat":0,
+        "lon":0,
+        "Water_T":0,
+        "Rudder_A":0,
+        "SOW":0,
+        "SOG":0,
+        "Head_T":0,
+        "Head_M":0,
+        },
+    "tags":{
+        "deviceId":"Raymarine",
+        "location":"Barco"
+        }
+    }
+
+def recibeudp(datos,dJSON):
     #datos=sentence.split(',')
     if datos[0]=="$IIHDM":     #Heading
-        pass    #NMEA_IIHDM(datos,estado)
+        pass    #NMEA_IIHDM(datos,dJSON)
     elif datos[0]=="$IIMTW":
-        NMEA_IIMTW(datos,estado)
+        NMEA_IIMTW(datos,dJSON)
     elif datos[0]=="$IIRSA":
-        NMEA_IIRSA(datos,estado)
+        NMEA_IIRSA(datos,dJSON)
     elif datos[0]=="$IIMWV":
-        NMEA_IIMWV(datos,estado)
+        NMEA_IIMWV(datos,dJSON)
     elif datos[0]=="$IIDBT":    #depth below transducer
         pass #NMEA_IIDBT(datos)
     elif datos[0]=="$IIMTW":
-        NMEA_IIMTW(datos,estado)
+        NMEA_IIMTW(datos,dJSON)
     elif datos[0]=="$IIVHW":
-        NMEA_IIVHW(datos,estado)
+        NMEA_IIVHW(datos,dJSON)
     elif datos[0]=="$IIVLW":             #distance traveled. 1: Tota, 2: Distance since reset
-        pass #NMEA_IIVLW(datos,estado)      
+        pass #NMEA_IIVLW(datos,dJSON)      
     elif datos[0]=="$GPGSV":
         NMEA_GPGSV(datos)
     elif datos[0]=="$GPGLL":
-        pass         #NMEA_GPGLL(datos,estado)
+        pass         #NMEA_GPGLL(datos,dJSON)
     elif datos[0]=="$GPRMC":
-        NMEA_GPRMC(datos, estado)
+        NMEA_GPRMC(datos, dJSON)
     elif datos[0]=="$GPGGA":
         pass #NMEA_GPGGA(datos)
     elif datos[0]=="$GPVTG":  # i use RMC instead
@@ -80,7 +112,7 @@ def recibeudp(datos,estado):
     elif datos[0]=="!AIVDO":  # AIS data
         pass
     elif datos[0]=="$ERRPM":  # Engine RPM
-        NMEA_ERRPM(datos, estado)
+        NMEA_ERRPM(datos, dJSON)
     else:
         logging.warning("unknown directive : "+sentence)
     return
@@ -88,112 +120,128 @@ def recibeudp(datos,estado):
 def NMEA_IIDBT(datos): #Depth below transducer
     pass
 
-def NMEA_IIMWV(datos,estado):
+def NMEA_IIMWV(datos,dJSON):
     if datos[2]=="R":
-        estado["AWA"]=datos[1]
-        estado["AWS"]=datos[3]
+        dJSON["AWA"]=float(datos[1])
+        dJSON["AWS"]=float(datos[3])
     elif datos[2]=="T":
-        estado["TWA"]=datos[1]
-        estado["TWS"]=datos[3]
+        dJSON["TWA"]=float(datos[1])
+        dJSON["TWS"]=float(datos[3])
     return; 
 
-def NMEA_IIMTW(datos,estado):
-    estado["Water_T"]=datos[1]
+def NMEA_IIMTW(datos,dJSON):
+    dJSON["Water_T"]=float(datos[1])
     return;
 
-def NMEA_IIVHW(datos,estado):
+def NMEA_IIVHW(datos,dJSON):
     if datos[2]=='T':
-        estado["Head_T"]=datos[1] 
+        dJSON["Head_T"]=float(datos[1])
     if datos[4]=='M':
-        estado["Head_M"]=datos[3] 
-    estado["SOW"]=datos[5]
+        dJSON["Head_M"]=float(datos[3]) 
+    dJSON["SOW"]=float(datos[5])
     return
 
-def NMEA_IIRSA(datos,estado):
+def NMEA_IIRSA(datos,dJSON):
     if datos[2]=='A':
-        estado["Rudder_A"]=datos[1] 
+        dJSON["Rudder_A"]=float(datos[1]) 
 
-def NMEA_GPGLL(datos,estado):
+def NMEA_GPGLL(datos,dJSON):
     pass
     if datos[5]=="A" :
-        estado["lat"]=float(datos[1])/100 
+        dJSON["lat"]=float(datos[1])/100 
         if datos[2]=="S":
-            estado["lat"]*=-1
-        estado["lon"]=float(datos[3])/100 
+            dJSON["lat"]*=-1
+        dJSON["lon"]=float(datos[3])/100 
         if datos[4]=="O" :
-            estado["lon"]*=-1
+            dJSON["lon"]*=-1
     return
 
 def NMEA_GPGSV(datos):
     pass
 
-def NMEA_GPRMC(datos,estado):
-    if datos[2]=='A':
-        estado["lat"]=float(datos[3])/100 
+def NMEA_GPRMC(datos,dJSON):
+     if datos[2]=='A':
+        dJSON["lat"]=float(datos[3])/100 
         if datos[4]=="S":
-            estado["lat"]*=-1
-        estado["lon"]=float(datos[5])/100
+            dJSON["lat"]*=-1
+        dJSON["lon"]=float(datos[5])/100
         if datos[6]=="O":
-            estado["lon"]*=-1
-        estado["SOG"]=datos[7]
-        estado["Head_T"]=datos[8]
-        estado["Mag_dev"]=datos[10]
-        if datos[11]=="O":
-            estado["Mag_dev"]=-datos[10]
-           
-        currentTime=datetime(int(datos[9][4:6])+2000,int(datos[9][2:4]),int(datos[9][0:2]),
-                      int(datos[1][0:2]),int(datos[1][2:4]),int(datos[1][4:6]) )
-        estado["epoch"]=currentTime.timestamp()
+            dJSON["lon"]*=-1
+        dJSON["SOG"]=float(datos[7])
+        dJSON["Head_T"]=float(datos[8])
+        if datos[11]!='':
+            dJSON["Mag_dev"]=float(datos[10])
+            if datos[11]=="O":
+                estado["Mag_dev"]=-float(datos[10])
         secs,usecs=divmod(time(),1)   # si a time() le restara altzone tendria la hora local
-        if secs-estado["epoch"] < 7500 :
-            estado["hora"]=str(int(estado["epoch"]))+str(int(usecs*1000000000))
-        else:
-            estado["hora"]=str(int(secs))+str(int(usecs*1000000000))
+        datosJSON["time"]=int(int(secs*1000000000)+int(usecs*1000000000))
 
 def NMEA_GPVTG(datos):
     pass
 
-def NMEA_ERRPM(datos,estado):  
+def NMEA_ERRPM(datos,dJSON): 
+    global estado 
     #$ERRPM,E|S,Speed,%,A*CRC
-    logging.debug(estado["RPM"]) 
+    logging.debug(dJSON["RPM"]) 
     if int(datos[2])>0:
-        estado["RPM"]=1
+        dJSON["RPM"]=1
         estado["ENG"]=True
     else:
-        estado["RPM"]=0
+        dJSON["RPM"]=0
         estado["ENG"]=False
-    logging.info("RPM="+str(estado["RPM"]))   
+    logging.debug("RPM="+str(dJSON["RPM"]))   
+#*******************************************************************
+#****************************** MQTT *******************************
+# Funciones de Callback
+def on_connect(mqttCliente, userdata, flags, rc):
+    logging.debug("Connected to broker")
+    pass
+ 
+def on_subscribe(mqttCliente, userdata, mid, granted_qos):
+    logging.info("Subscribed OK; message "+str(mid)+"   qos= "+ str(granted_qos))
+    sleep(1)
 
-def escribe(linea):
-    if len(clientes["sender"]["broker"])>2:
-        try:   
-            result, mid = clientes["sender"]["cliente"].publish(clientes["sender"]["publish_topic"], json.dumps(dato), qos=2, retain=True )
-            logging.info("data sent to %s, rc=%d",clientes["sender"]["broker"],result)
-            if result!=0:
-                logging.warning("publish rc!=0 : rc= %d ",result)
-        except Exception as exErr:
-            if hasattr(exErr, 'message'):
-                logging.warning("Connection error type 1 = "+ exErr.message)
-            else:
-                logging.warning("Connection error type 2 = "+ exErr)                   
-            sleep(30)
-            logging.warning("Connection lost with Sender destination. Retrying")
-            arrancaCliente(clientes["sender"],True)
-def leeParser(configfile,configData):
+def on_disconnect(mqttCliente, userdata, rc):
+    logging.info("Disconnected, rc= "+str(rc))    
+    reconectate(mqttCliente)   
+
+def on_publish(mqttCliente, userdata, mid):
+    logging.debug("message published "+ str(mid))   
+
+def on_message(mqttCliente, userdata, mid):
+    logging.debug("Not subscribed, this is imposible "+ str(mid))   
+
+
+#Initializes an mqtt Client
+def arrancaCliente(mqttCliente, cleanSess):
+    if (cleanSess==False):
+        mqttCliente["cliente"]= mqtt.Client(mqttCliente["name"],clean_session=cleanSess)           
+    else:
+        mqttCliente["cliente"]  = mqtt.Client(clean_session=cleanSess) 
+    mqttCliente["cliente"].on_connect = on_connect
+    mqttCliente["cliente"].on_message = on_message    
+    mqttCliente["cliente"].on_connect = on_connect
+    mqttCliente["cliente"].on_publish = on_publish
+    mqttCliente["cliente"].on_subscribe = on_subscribe
+    logging.info("call back registered for "+mqttCliente["name"])
+    if (mqttCliente["userid"]!=''):
+        mqttCliente["cliente"].username_pw_set(mqttCliente["userid"] , password=mqttCliente["password"])
+    mqttCliente["cliente"].connect(mqttCliente["broker"],mqttCliente ["port"])
+    return mqttCliente["cliente"]
+    
+def leeParser(configFile,configData):
     parser = ConfigParser()
     parser.read(configFile)
-    log_level='info'
-    if parser.has_section("log_level"):
-        if parser.has_option("log_level","log_level"):  
-            configData["loglevel"]=parser.get("log_level","log_level")
-            print("loglevel=",log_level)
-    logging.basicConfig(stream=sys.stderr, format = '%(asctime)-15s  %(message)s', level=log_level.upper()) 
+    if parser.has_section("loglevel"):
+        if parser.has_option("loglevel","loglevel"):  
+            configData["loglevel"]=parser.get("loglevel","loglevel")
+    logging.basicConfig(stream=sys.stderr, format = '%(asctime)-15s  %(message)s', level=configData["loglevel"].upper()) 
     if parser.has_section("udp"):
         if parser.has_option("udp","port"):
             configData["portudp"]=int(parser.get("udp","port"))
     if parser.has_section("settings"):
         if parser.has_option("settings","device_id"):   
-            configData["device_id"]=parser.get("settings","device_id")      
+            configData["device_id"]=parser.get("settings","device_id")
         if parser.has_option("settings","location"):    
             configData["location"]=parser.get("settings","location")
         if parser.has_option("settings","influxdb"):    
@@ -214,125 +262,94 @@ def leeParser(configfile,configData):
             configData[
             "num_records"]=int(parser.get("settings","num_records"))            
 
+
     filename=""
     if parser.has_section("rawfile"):
-        if parser.has_option("raw_file","filename"):    
-            configData["fileraw"]=parser.get("raw_file","filename")
+        if parser.has_option("rawfile","filename"):    
+            configData["rawfile"]=parser.get("rawfile","filename")
+    else:
+        configData["rawfile"]=''
     return
 
 if __name__ == '__main__':
     leeParser(configFile,configData)
-    tags["deviceId"]=configData["device_id"]
-    tags["location"]=configData["location"]
-    logging.info(configData)
-   
+    mqttCliente["name"]=configData["device_id"]+"_"+configData["location"]
+    mqttCliente["userid"]=configData["username"]
+    mqttCliente["password"]=configData["password"]
+    mqttCliente["broker"]=configData["destination_mqtt"]
+    mqttCliente["port"]=configData["port"]
+    mqttCliente["publish_topic"]=configData["publish_topic"]
+    logging.info(mqttCliente)
+    datosJSON["tags"]["deviceId"]=configData["device_id"]
+    datosJSON["tags"]["location"]=configData["location"]
+    logging.info(mqttCliente)
     # Create  socket AF_INET:ipv4, SOCK_DGAM:udp
     clienteSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     clienteSock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)       
     # La direccion en blanco equivale a 0.0.0.0 que equivale a INADDR_ANY
     clienteSock.bind(('' , int(configData["portudp"])))
     logging.info("Socket="+str(clienteSock))
-    logging.info("Waiting for message")
-    estado={}
-    estado["RPM"]=0
-    if configData["fileraw"]=='':
+    estado["RPM"]=1
+    estado["ENG"]=True
+    if configData["rawfile"]=='':
         estado["FILE"]=False
     else:
         estado["FILE"]=True
         ahora = datetime.now()
-        configData["fileraw"]=configData["fileraw"]+'-'+str(ahora.strftime("%Y%m%d"))+".log"
-        fileRaw=open(configData["fileraw"],"a")         
-    estado["ENG"]=False
-    estado["RPM"]=0
-    estado["epoch"]=0
-    estado["hora"]=0
-    estado["AWA"]=""
-    estado["AWS"]=""
-    estado["TWA"]=""
-    estado["TWS"]=""
-    estado["lat"]=""
-    estado["lon"]=""
-    estado["Water_T"]=""
-    estado["Rudder_A"]=""
-    estado["SOW"]=""
-    estado["SOG"]=""
-    estado["Head_T"]=""
-    estado["Head_M"]=""
-    estado["Mag_dev"]  =""
+        configData["rawfile"]=configData["rawfile"]+'-'+str(ahora.strftime("%Y%m%d"))+".log"
+        logging.debug("log filename="+configData["rawfile"])
+        fileNMEA=open(configData["rawfile"],"a")         
+  
+    logging.debug("end of inicialization")
     i=0
     try:  
-        logging.debug("define mqtt client",configData["device_id"])
-        mqttc = paho.Client(configData["device_id"], clean_session=True)
-        logging.debug("mqtt client defined")
-        mqttc.connect(configData["destination_mqtt"], configData["port"], 60)
-        logging.debug("mqtt client connected")
-        mqttc.reconnect_delay_set(60, 600) 
-        #mqttc.username_pw_set(configData["username"] , password=configData["password"])
+        logging.debug("define mqtt client")
+        logging.debug(configData["device_id"])
+        mqttc=arrancaCliente(mqttCliente , False)
+        mqttc.loop_start()  
         conectado=True
     except:
         logging.error("could not connect to remote mqtt")
         conectado=False
+    logging.info("Waiting for message")
     while True:
         try:
             sentence, origen = clienteSock.recvfrom(1024)
             sentence=sentence.decode("utf-8")
-            logging.debug(sentence.strip('\r\n'))
             if ((not estado["ENG"]) and estado["FILE"]):   #engine stopped and there is logfile 
-                 fileRaw.write(sentence)
+                 fileNMEA.write(sentence)
             else:
                 pass
             datos=sentence.split(',')            
-            recibeudp(datos,estado)
+            recibeudp(datos,datosJSON["fields"])
             if (i>configData["num_records"]):
-                cadena='"RPM"'+':'+str(estado["RPM"])+','
-                cadena=cadena+'"AWA":'+estado["AWA"]+',' if estado["AWA"]!='' else cadena
-                cadena=cadena+'"AWS":'+estado["AWS"]+',' if estado["AWS"]!='' else cadena
-                cadena=cadena+'"TWA":'+estado["TWA"]+',' if estado["TWA"]!='' else cadena   
-                cadena=cadena+'"TWS":'+estado["TWS"]+',' if estado["TWS"]!='' else cadena
-                cadena=cadena+'"lat":'+str(round(estado["lat"],7))+',' if estado["lat"]!='' else cadena
-                cadena=cadena+'"lon":'+str(round(estado["lon"],7))+',' if estado["lon"]!='' else cadena
-                cadena=cadena+'"Water_T":'+estado["Water_T"]+',' if estado["Water_T"]!='' else cadena
-                cadena=cadena+'"Rudder_A":'+estado["Rudder_A"]+',' if estado["Rudder_A"]!='' else cadena
-                cadena=cadena+'"SOW":'+estado["SOW"]+',' if estado["SOW"]!='' else cadena
-                cadena=cadena+'"SOG":'+estado["SOG"]+',' if estado["SOG"]!='' else cadena
-                cadena=cadena+'"Head_T":'+estado["Head_T"]+',' if estado["Head_T"]!='' else cadena
-                cadena=cadena+'"Head_M":'+estado["Head_M"]+',' if estado["Head_M"]!='' else cadena
-                #cadena=cadena+'"Mag_dev":'+estado["Mag_dev"] if estado["Mag_dev"]!='' else cadena
-                cadena=cadena.strip(',')
-                cadena='{'+cadena +'}'
                 try:
-                    cadena='{"measurement":"'+measurement+'","time":'+str(estado["hora"])+',"fields":'+cadena+',"tags":'+json.dumps(tags)+'}'
-                    datoJSON=cadena
-                    logging.info(datoJSON)
-                    result, mid = mqttc.publish(configData["publish_topic"], datoJSON, 1, True )
+                    logging.info(datosJSON)
+                    result, mid = mqttc.publish(configData["publish_topic"], json.dumps(datosJSON), 1, True )
                 except:
-                    logging.warning("could not JSONize ",'{"measurement":"'+measurement+'","time":'+str(estado["hora"])+',"fields":'+cadena+',"tags":'+tags+'}')
+                    logging.warning("Error sending topic")
+                    logging.wrning(datosJSON)
                 i=0
-                estado["ENG"]=False
+                estado["ENG"]=True
                 if (estado["FILE"]):
-                    fileRaw.flush()
+                    fileNMEA.flush()
             if datos[0]!="$ERRPM":  # only increments counter if data is different of $ERRPM
                 i+=1
             if conectado==False:
                 try:  
-                    logging.debug("define mqtt client",configData["device_id"])
-                    mqttc = paho.Client(configData["device_id"], clean_session=True)
-                    logging.debug("mqtt client defined")
-                    mqttc.connect(configData["destination_mqtt"], configData["port"], 60)
-                    logging.debug("mqtt client connected")
-                    mqttc.reconnect_delay_set(60, 600) 
-                    #mqttc.username_pw_set(configData["username"] , password=configData["password"])
+                    logging.debug("define mqtt client")
+                    logging.debug(configData["device_id"])
+                    mqttc=arrancaCliente(mqttCliente , False)
+                    mqttc.loop_start()  
                     conectado=True
                 except:
                     logging.error("could not connect to remote mqtt")
                     conectado=False
         except KeyboardInterrupt:
             if (estado["FILE"]):
-                fileRaw.close()
-            break
-        except:
-            if (estado["FILE"]):
-                fileRaw.close()
+                fileNMEA.close()
+            mqttCliente["cliente"].loop_stop() 
             logging.error("Abnormal end of program")
+            exit()
     exit()
 
