@@ -54,7 +54,7 @@ estado={
     }
 
 datosJSON={    
-    "measurement":"medidas",
+    "measurement":"NMEA",
     "time":0,
     "fields": {
         "RPM":0,
@@ -160,21 +160,23 @@ def NMEA_GPGSV(datos):
     pass
 
 def NMEA_GPRMC(datos,dJSON):
-     if datos[2]=='A':
-        dJSON["lat"]=float(datos[3])/100 
-        if datos[4]=="S":
-            dJSON["lat"]*=-1
-        dJSON["lon"]=float(datos[5])/100
-        if datos[6]=="O":
-            dJSON["lon"]*=-1
-        dJSON["SOG"]=float(datos[7])
-        dJSON["Head_T"]=float(datos[8])
-        if datos[11]!='':
-            dJSON["Mag_dev"]=float(datos[10])
-            if datos[11]=="O":
-                estado["Mag_dev"]=-float(datos[10])
-        secs,usecs=divmod(time(),1)   # si a time() le restara altzone tendria la hora local
-        datosJSON["time"]=int(int(secs*1000000000)+int(usecs*1000000000))
+    try:
+         if datos[2]=='A':
+            dJSON["lat"]=float(datos[3])/100 
+            if datos[4]=="S":
+                dJSON["lat"]*=-1
+            dJSON["lon"]=float(datos[5])/100
+            if datos[6]=="O":
+                dJSON["lon"]*=-1
+            dJSON["SOG"]=float(datos[7])
+            if dJSON["Head_T"]!='':
+                dJSON["Head_T"]=float(datos[8])
+            if datos[11]!='':
+            secs,usecs=divmod(time(),1)   # si a time() le restara altzone tendria la hora local
+            datosJSON["time"]=int(int(secs*1000000000)+int(usecs*1000000000))
+    except:
+        logging.warning("could not convert")
+        logging.warning(datos)
 
 def NMEA_GPVTG(datos):
     pass
@@ -244,8 +246,8 @@ def leeParser(configFile,configData):
             configData["device_id"]=parser.get("settings","device_id")
         if parser.has_option("settings","location"):    
             configData["location"]=parser.get("settings","location")
-        if parser.has_option("settings","influxdb"):    
-            configData["influxdb"]=parser.get("settings","influxdb")
+        if parser.has_option("settings","measurement"):    
+            configData["measurement"]=parser.get("settings","measurement")
         if parser.has_option("settings","destination_mqtt"):    
             configData["destination_mqtt"]=parser.get("settings","destination_mqtt")          
         if parser.has_option("settings","user_name"):   
@@ -282,6 +284,7 @@ if __name__ == '__main__':
     logging.info(mqttCliente)
     datosJSON["tags"]["deviceId"]=configData["device_id"]
     datosJSON["tags"]["location"]=configData["location"]
+    datosJSON["measurement"]=configData["measurement"]
     logging.info(mqttCliente)
     # Create  socket AF_INET:ipv4, SOCK_DGAM:udp
     clienteSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -320,7 +323,8 @@ if __name__ == '__main__':
                  fileNMEA.write(sentence)
             else:
                 pass
-            datos=sentence.split(',')            
+            datos=sentence.split(',')
+            logging.debug(datos)            
             recibeudp(datos,datosJSON["fields"])
             if (i>configData["num_records"]):
                 try:
