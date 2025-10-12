@@ -7,7 +7,7 @@ Read an UDP stream and print received msgs
 import socket
 import sys
 import json
-portUDP=4000
+portUDP=4500
 
 
 
@@ -18,6 +18,7 @@ if __name__ == '__main__':
     clienteSock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)       
     # La direccion en blanco equivale a 0.0.0.0 que equivale a INADDR_ANY
     clienteSock.bind(('' , portUDP))
+    print(clienteSock)
 
     while True:
         try:
